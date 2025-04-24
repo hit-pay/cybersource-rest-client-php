@@ -20,7 +20,11 @@ use CyberSource\Authentication\Util\Cache as Cache;
 class JWEUtility {
     private static $cache = null;
     
+    /**
+     * @deprecated This method has been marked as Deprecated and will be removed in coming releases.
+     */
     private static function loadKeyFromPEMFile($path) {
+        trigger_error("This method has been marked as Deprecated and will be removed in coming releases.", E_USER_DEPRECATED);
         return JWKFactory::createFromKeyFile(
             $path,
             '',                   // Secret if the key is encrypted
@@ -30,7 +34,11 @@ class JWEUtility {
         );
     }
 
+    /**
+     * @deprecated This method has been marked as Deprecated and will be removed in coming releases. Use decryptJWEUsingPrivateKey(\$privateKey, \$encodedResponse) instead.
+     */
     public static function decryptJWEUsingPEM(MerchantConfiguration $merchantConfig, string $jweBase64Data) {
+        trigger_error("This method has been marked as Deprecated and will be removed in coming releases. Use decryptJWEUsingPrivateKey(\$privateKey, \$encodedResponse) instead.", E_USER_DEPRECATED);
         if (!isset(self::$cache)) {
             self::$cache = new Cache();
         }
@@ -38,13 +46,9 @@ class JWEUtility {
         if (!file_exists($filePath)) {
             return null;
         }
-        $cacheKey = 'privateKeyFromPEMFile' . '_' . strtotime(date("F d Y H:i:s", filemtime($filePath)));
-        $cached_key = self::$cache->checkIfExistInCache($cacheKey); // apcu_exists($cacheKey);
-        if (!$cached_key) {
-            $privateKeyFromPEMFile = self::loadKeyFromPEMFile($merchantConfig->getJwePEMFileDirectory());
-            self::$cache->storeInCache($cacheKey, $privateKeyFromPEMFile); // apcu_store($cacheKey, $privateKeyFromPEMFile);
-        }
-        $jweKey = self::$cache->fetchFromCache($cacheKey); // apcu_fetch($cacheKey);
+
+        $jweKey = self::$cache->grabKeyFromPEM($filePath);
+
         $serializerManager = new JWESerializerManager([
             new CompactSerializer(),
         ]);
@@ -72,6 +76,37 @@ class JWEUtility {
 
         $jwe = $serializerManager->unserialize($jweBase64Data);
         if($jweDecrypter -> decryptUsingKey($jwe, $jweKey, 0)) {
+            return $jwe ->getPayload();
+        } else {
+            return null;
+        }
+    }
+
+    public static function decryptJWEUsingPrivateKey(string $privateKey, string $encodedResponse) {
+        $jwk = JWKFactory::createFromKey($privateKey);
+        // The key encryption algorithm manager with the A256KW algorithm.
+        $keyEncryptionAlgorithmManager = new AlgorithmManager([
+            new RSAOAEP256()
+        ]);
+
+        // The content encryption algorithm manager with the A256CBC-HS256 algorithm.
+        $contentEncryptionAlgorithmManager = new AlgorithmManager([
+            new A256GCM(),
+        ]);
+
+        // The serializer manager. We only use the JWE Compact Serialization Mode.
+        $serializerManager = new JWESerializerManager([
+            new CompactSerializer(),
+        ]);
+
+        $jweDecrypter = new JWEDecrypter(
+            $keyEncryptionAlgorithmManager,
+            $contentEncryptionAlgorithmManager,
+            new CompressionMethodManager([new Deflate()])
+        );
+
+        $jwe = $serializerManager->unserialize($encodedResponse);
+        if($jweDecrypter -> decryptUsingKey($jwe, $jwk, 0)) {
             return $jwe ->getPayload();
         } else {
             return null;
